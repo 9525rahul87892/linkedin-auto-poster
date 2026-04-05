@@ -1,5 +1,5 @@
 ﻿"""
-LinkedIn Posts API integration.
+LinkedIn posting via v2 ugcPosts API.
 Creates posts with text, images, and article links.
 """
 
@@ -9,8 +9,6 @@ from config import (
     LINKEDIN_REFRESH_TOKEN,
     LINKEDIN_CLIENT_ID,
     LINKEDIN_CLIENT_SECRET,
-    LINKEDIN_API_BASE,
-    LINKEDIN_API_VERSION,
     DEFAULT_HASHTAGS,
     KEYWORD_HASHTAGS,
 )
@@ -20,17 +18,16 @@ def get_headers(access_token=None):
     """Build LinkedIn API headers."""
     token = access_token or LINKEDIN_ACCESS_TOKEN
     return {
-        "Authorization": f"Bearer {token}",
+        "Authorization": "Bearer " + token,
         "Content-Type": "application/json",
-        "LinkedIn-Version": LINKEDIN_API_VERSION,
         "X-Restli-Protocol-Version": "2.0.0",
     }
 
 
 def get_user_id(access_token=None):
-    """Get the authenticated user's LinkedIn person URN."""
+    """Get the authenticated user person URN."""
     token = access_token or LINKEDIN_ACCESS_TOKEN
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": "Bearer " + token}
 
     try:
         resp = requests.get(
@@ -40,12 +37,10 @@ def get_user_id(access_token=None):
         user_info = resp.json()
         user_id = user_info.get("sub")
         if user_id:
-            print(f"[+] Authenticated as user: {user_id}")
-            return f"urn:li:person:{user_id}"
+            print("[+] Authenticated as: " + user_info.get("name", user_id))
+            return "urn:li:person:" + user_id
     except Exception as e:
-        print(f"[!] Failed to get user info: {e}")
-        if hasattr(e, "response") and e.response is not None:
-            print(f"    Response: {e.response.text}")
+        print("[!] Failed to get user info: " + str(e))
 
     return None
 
@@ -75,20 +70,19 @@ def refresh_access_token():
         return new_access, new_refresh
 
     except Exception as e:
-        print(f"[!] Failed to refresh token: {e}")
+        print("[!] Failed to refresh token: " + str(e))
         return None, None
 
 
 def generate_hashtags(title, description):
     """Generate relevant hashtags based on article content."""
-    text = f"{title} {description}".lower()
+    text = (title + " " + description).lower()
     tags = set()
 
     for keyword, hashtag in KEYWORD_HASHTAGS.items():
         if keyword in text:
             tags.add(hashtag)
 
-    # Add default tags, total max 6
     for tag in DEFAULT_HASHTAGS:
         if len(tags) >= 6:
             break
@@ -108,154 +102,203 @@ def format_post_text(article):
     hashtags = generate_hashtags(title, description)
     hashtag_str = " ".join(hashtags)
 
-    # Build post text
     lines = []
-    lines.append(f"\xf0\x9f\x9a\x80 {title}")
+    lines.append("\xf0\x9f\x9a\x80 " + title)
     lines.append("")
 
     if description:
         lines.append(description)
         lines.append("")
 
-    lines.append(f"\xf0\x9f\x93\xb0 Source: {source}")
-    lines.append(f"\xf0\x9f\x94\x97 Read more: {url}")
+    lines.append("\xf0\x9f\x93\xb0 Source: " + source)
+    lines.append("\xf0\x9f\x94\x97 Read more: " + url)
     lines.append("")
     lines.append(hashtag_str)
     if source_tag:
-        lines.append(f"#{source_tag}")
+        lines.append("#" + source_tag)
 
     return "\n".join(lines)
 
 
+def upload_image_v2(image_path, person_urn, access_token=None):
+    """Upload image via v2 assets API and return the asset URN."""
+    token = access_token or LINKEDIN_ACCESS_TOKEN
+    headers = get_headers(token)
+
+    # Step 1: Register upload
+    register_body = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": person_urn,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent"
+                }
+            ]
+        }
+    }
+
+    try:
+        resp = requests.post(
+            "https://api.linkedin.com/v2/assets?action=registerUpload",
+            json=register_body,
+            headers=headers,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        upload_url = data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+        asset_urn = data["value"]["asset"]
+
+        print("  [+] Got upload URL, asset: " + asset_urn)
+
+    except Exception as e:
+        print("  [!] Failed to register image upload: " + str(e))
+        return None
+
+    # Step 2: Upload binary
+    try:
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+
+        upload_headers = {
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/octet-stream",
+        }
+
+        resp = requests.put(upload_url, data=image_data, headers=upload_headers, timeout=60)
+        resp.raise_for_status()
+        print("  [+] Image uploaded successfully!")
+        return asset_urn
+
+    except Exception as e:
+        print("  [!] Failed to upload image: " + str(e))
+        return None
+
+
 def create_post_with_article(article, person_urn, access_token=None):
-    """
-    Create a LinkedIn post with an article link (shows a rich preview card).
-    """
+    """Create a post with article link (rich preview card)."""
     token = access_token or LINKEDIN_ACCESS_TOKEN
     text = format_post_text(article)
 
     body = {
         "author": person_urn,
-        "commentary": text,
-        "visibility": "PUBLIC",
-        "distribution": {
-            "feedDistribution": "MAIN_FEED",
-            "targetEntities": [],
-            "thirdPartyDistributionChannels": [],
-        },
-        "content": {
-            "article": {
-                "source": article["url"],
-                "title": article["title"],
-                "description": article.get("description", "")[:200],
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": text},
+                "shareMediaCategory": "ARTICLE",
+                "media": [
+                    {
+                        "status": "READY",
+                        "originalUrl": article["url"],
+                        "title": {"text": article["title"]},
+                        "description": {"text": article.get("description", "")[:200]},
+                    }
+                ],
             }
         },
-        "lifecycleState": "PUBLISHED",
-        "isReshareDisabledByAuthor": False,
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
 
-    # Add thumbnail if available
+    # Add thumbnail
     if article.get("image_url"):
-        body["content"]["article"]["thumbnail"] = article["image_url"]
+        body["specificContent"]["com.linkedin.ugc.ShareContent"]["media"][0]["thumbnails"] = [
+            {"url": article["image_url"]}
+        ]
 
     try:
         resp = requests.post(
-            f"{LINKEDIN_API_BASE}/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             json=body,
             headers=get_headers(token),
             timeout=30,
         )
         resp.raise_for_status()
-        post_id = resp.headers.get("x-restli-id", "unknown")
-        print(f"[+] Article post created successfully! Post ID: {post_id}")
+        post_id = resp.json().get("id", resp.headers.get("x-restli-id", "unknown"))
+        print("[+] Article post created! ID: " + str(post_id))
         return True
 
     except requests.exceptions.HTTPError as e:
-        print(f"[!] Failed to create article post: {e}")
-        print(f"    Status: {e.response.status_code}")
-        print(f"    Response: {e.response.text}")
+        print("[!] Article post failed: " + str(e.response.status_code))
+        print("    " + e.response.text[:300])
         return False
 
 
-def create_post_with_image(article, image_urn, person_urn, access_token=None):
-    """
-    Create a LinkedIn post with an uploaded image.
-    """
+def create_post_with_image(article, asset_urn, person_urn, access_token=None):
+    """Create a post with an uploaded image."""
     token = access_token or LINKEDIN_ACCESS_TOKEN
     text = format_post_text(article)
 
     body = {
         "author": person_urn,
-        "commentary": text,
-        "visibility": "PUBLIC",
-        "distribution": {
-            "feedDistribution": "MAIN_FEED",
-            "targetEntities": [],
-            "thirdPartyDistributionChannels": [],
-        },
-        "content": {
-            "media": {
-                "title": article["title"],
-                "id": image_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": text},
+                "shareMediaCategory": "IMAGE",
+                "media": [
+                    {
+                        "status": "READY",
+                        "media": asset_urn,
+                        "title": {"text": article["title"]},
+                    }
+                ],
             }
         },
-        "lifecycleState": "PUBLISHED",
-        "isReshareDisabledByAuthor": False,
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
 
     try:
         resp = requests.post(
-            f"{LINKEDIN_API_BASE}/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             json=body,
             headers=get_headers(token),
             timeout=30,
         )
         resp.raise_for_status()
-        post_id = resp.headers.get("x-restli-id", "unknown")
-        print(f"[+] Image post created successfully! Post ID: {post_id}")
+        post_id = resp.json().get("id", resp.headers.get("x-restli-id", "unknown"))
+        print("[+] Image post created! ID: " + str(post_id))
         return True
 
     except requests.exceptions.HTTPError as e:
-        print(f"[!] Failed to create image post: {e}")
-        print(f"    Status: {e.response.status_code}")
-        print(f"    Response: {e.response.text}")
+        print("[!] Image post failed: " + str(e.response.status_code))
+        print("    " + e.response.text[:300])
         return False
 
 
 def create_text_post(article, person_urn, access_token=None):
-    """
-    Create a text-only LinkedIn post (fallback if image/article fails).
-    """
+    """Create a text-only post (fallback)."""
     token = access_token or LINKEDIN_ACCESS_TOKEN
     text = format_post_text(article)
 
     body = {
         "author": person_urn,
-        "commentary": text,
-        "visibility": "PUBLIC",
-        "distribution": {
-            "feedDistribution": "MAIN_FEED",
-            "targetEntities": [],
-            "thirdPartyDistributionChannels": [],
-        },
         "lifecycleState": "PUBLISHED",
-        "isReshareDisabledByAuthor": False,
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": text},
+                "shareMediaCategory": "NONE",
+            }
+        },
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
     }
 
     try:
         resp = requests.post(
-            f"{LINKEDIN_API_BASE}/posts",
+            "https://api.linkedin.com/v2/ugcPosts",
             json=body,
             headers=get_headers(token),
             timeout=30,
         )
         resp.raise_for_status()
-        post_id = resp.headers.get("x-restli-id", "unknown")
-        print(f"[+] Text post created successfully! Post ID: {post_id}")
+        post_id = resp.json().get("id", resp.headers.get("x-restli-id", "unknown"))
+        print("[+] Text post created! ID: " + str(post_id))
         return True
 
     except requests.exceptions.HTTPError as e:
-        print(f"[!] Failed to create text post: {e}")
-        print(f"    Status: {e.response.status_code}")
-        print(f"    Response: {e.response.text}")
+        print("[!] Text post failed: " + str(e.response.status_code))
+        print("    " + e.response.text[:300])
         return False

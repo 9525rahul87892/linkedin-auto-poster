@@ -13,7 +13,7 @@ LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_REFRESH_TOKEN = os.getenv("LINKEDIN_REFRESH_TOKEN", "")
 
 # LinkedIn API version (YYYYMM format)
-LINKEDIN_API_VERSION = "202501"
+LINKEDIN_API_VERSION = "202406"
 LINKEDIN_API_BASE = "https://api.linkedin.com/rest"
 
 # --- RSS Feeds (Tech News Sources) ---
