@@ -2,10 +2,9 @@
 
 on:
   schedule:
-    # Runs every 1 hour
-    - cron: '0 * * * *'
+    # Optimized: peak hours 11AM-1PM GMT, spread across day
+    - cron: '0 5,7,9,11,12,13,15,17,19,21,23 * * *'
   workflow_dispatch:
-    # Manual trigger for testing
 
 permissions:
   contents: write
@@ -13,7 +12,6 @@ permissions:
 jobs:
   post-to-linkedin:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

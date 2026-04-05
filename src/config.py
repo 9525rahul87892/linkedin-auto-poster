@@ -1,4 +1,4 @@
-"""
+﻿"""
 Configuration for LinkedIn Auto Poster.
 All settings are read from environment variables.
 """
@@ -12,9 +12,8 @@ LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET", "")
 LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
 LINKEDIN_REFRESH_TOKEN = os.getenv("LINKEDIN_REFRESH_TOKEN", "")
 
-# LinkedIn API version (YYYYMM format)
-LINKEDIN_API_VERSION = "202406"
-LINKEDIN_API_BASE = "https://api.linkedin.com/rest"
+# LinkedIn API base URL
+LINKEDIN_API_BASE = "https://api.linkedin.com"
 
 # --- RSS Feeds (Tech News Sources) ---
 RSS_FEEDS = [
@@ -34,35 +33,3 @@ POSTED_ARTICLES_FILE = DATA_DIR / "posted_articles.json"
 
 # Max articles to remember
 MAX_POSTED_HISTORY = 500
-
-# --- Hashtags ---
-DEFAULT_HASHTAGS = ["#TechNews", "#Technology", "#Innovation", "#Tech"]
-
-KEYWORD_HASHTAGS = {
-    "ai": "#ArtificialIntelligence",
-    "artificial intelligence": "#AI",
-    "machine learning": "#MachineLearning",
-    "chatgpt": "#ChatGPT",
-    "openai": "#OpenAI",
-    "google": "#Google",
-    "apple": "#Apple",
-    "microsoft": "#Microsoft",
-    "tesla": "#Tesla",
-    "spacex": "#SpaceX",
-    "crypto": "#Crypto",
-    "bitcoin": "#Bitcoin",
-    "blockchain": "#Blockchain",
-    "cybersecurity": "#CyberSecurity",
-    "cloud": "#CloudComputing",
-    "startup": "#Startup",
-    "programming": "#Programming",
-    "python": "#Python",
-    "javascript": "#JavaScript",
-    "android": "#Android",
-    "ios": "#iOS",
-    "robotics": "#Robotics",
-    "quantum": "#QuantumComputing",
-    "nvidia": "#NVIDIA",
-    "meta": "#Meta",
-    "semiconductor": "#Semiconductors",
-}
